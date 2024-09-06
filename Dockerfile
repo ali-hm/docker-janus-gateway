@@ -1,7 +1,7 @@
 FROM debian:jessie
 
-LABEL maintainer="Linagora Folks <lgs-openpaas-dev@linagora.com>"
-LABEL description="Provides an image with Janus Gateway"
+LABEL maintainer="Ali Hamidi <h@behsad.net>"
+LABEL description="Provides an image with Janus Gateway highly configurable with mountable config files"
 
 RUN apt-get update -y \
     && apt-get upgrade -y
