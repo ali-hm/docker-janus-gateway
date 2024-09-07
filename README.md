@@ -2,6 +2,7 @@
 
 Run janus gateway configurable using environment variables.
 
+```
 docker run --rm \
  -e GATEWAY_IP=<Your server IP Address> \
  -e STUN_SERVER=stun.l.google.com \
@@ -15,3 +16,4 @@ docker run --rm \
  -p 7088:7088 \
  -p 10000-10099:10000-10099/udp \
  -d --name janus-webrtc alihamidi/janus-gateway 
+ ```
