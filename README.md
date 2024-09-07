@@ -166,6 +166,16 @@ in Janus Gateway's source code for detailed explanation of the parameters.
 - WEBSOCKETS_SSL_CERT_KEY - If SSL is enabled, path to certificate's key file
 - WEBSOCKETS_SSL_CERT_PWD - If SSL is enabled, certificate's passphrase
 
+### Http
+- HTTP_ENABLED - default false
+- HTTP_PORT - default 8088
+- HTTPS_ENABLED - default false
+- HTTPS_PORT - default 8089
+- ADMIN_HTTP_ENABLED - default false
+- ADMIN_HTTP_PORT - default 7088
+- ADMIN_HTTPS_ENABLED - default false
+- ADMIN_HTTPS_PORT - default 7889
+
 ### Plugins
 
 #### VideoRoom
@@ -216,6 +226,8 @@ in Janus Gateway's source code for detailed explanation of the parameters.
 #               for admin to manage listening only participants. default=false)
 #}
 ```
+- DEMO_ROOM_ENABLED - demo room "1234" enabled - default false
+- DEMO_ROOM_SECRET - default adminpwd
 
 #### Streaming
 - PLUGIN_STREAMING_ADMIN_KEY - If set, streams can be craeted via API only if this key is provided in the request (default=supersecret)
