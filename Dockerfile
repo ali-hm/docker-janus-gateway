@@ -1,80 +1,168 @@
-FROM debian:jessie
+FROM ubuntu:focal AS build
+ENV DEBIAN_FRONTEND=noninteractive
+ENV OS=linux
+ENV ARCH=amd64
 
-LABEL maintainer="Ali Hamidi <h@behsad.net>"
-LABEL description="Provides an image with Janus Gateway highly configurable with mountable config files"
+# Create workdir
+RUN mkdir /build
 
-RUN apt-get update -y \
-    && apt-get upgrade -y
-
-RUN apt-get install -y \
-    build-essential \
-    libmicrohttpd-dev \
-    libjansson-dev \
-    libnice-dev \
-    libssl-dev \
-    libsofia-sip-ua-dev \
-    libglib2.0-dev \
-    libopus-dev \
-    libogg-dev \
-    libini-config-dev \
-    libcollection-dev \
-    pkg-config \
-    gengetopt \
-    libtool \
-    autotools-dev \
-    automake
-
-RUN apt-get install -y \
-    sudo \
-    make \
+# Install global build dependencies
+RUN \
+  apt-get update && \
+  apt-get install -y \
     git \
-    doxygen \
-    graphviz \
+    pkg-config \
+    libtool \
+    automake \
     cmake
 
-RUN cd ~ \
-    && git clone https://github.com/cisco/libsrtp.git \
-    && cd libsrtp \
-    && git checkout v2.0.0 \
-    && ./configure --prefix=/usr --enable-openssl \
-    && make shared_library \
-    && sudo make install
+# Build usrsctp from sources
+RUN \
+  cd /build && \
+  git clone https://github.com/sctplab/usrsctp && \
+  cd usrsctp && \
+  git reset --hard 579e6dea765c593acaa8525f6280b85868c866fc && \
+  cmake -DCMAKE_INSTALL_PREFIX:PATH=/usr/local . && \
+  make -j$(nproc) && \
+  make install
 
-RUN cd ~ \
-    && git clone https://github.com/sctplab/usrsctp \
-    && cd usrsctp \
-    && ./bootstrap \
-    && ./configure --prefix=/usr \
-    && make \
-    && sudo make install
+# Install build dependencies of libnice
+RUN \
+  apt-get update && \
+  apt-get install -y \
+	  libssl-dev \
+    libglib2.0-dev \
+    python3 \
+    python3-pip \
+    python3-setuptools \
+    python3-wheel \
+    ninja-build \
+    gtk-doc-tools && \
+  pip3 install meson
 
-RUN cd ~ \
-    && git clone https://github.com/warmcat/libwebsockets.git \
-    && cd libwebsockets \
-    && git checkout v2.1.0 \
-    && mkdir build \
-    && cd build \
-    && cmake -DCMAKE_INSTALL_PREFIX:PATH=/usr .. \
-    && make \
-    && sudo make install
+# Build libnice from sources as one shipped with ubuntu is a bit outdated
+RUN \
+  cd /build && \
+  git clone --branch 0.1.22 https://gitlab.freedesktop.org/libnice/libnice.git && \
+  cd libnice && \
+  meson builddir && \
+  ninja -C builddir && \
+  ninja -C builddir install
 
-RUN cd ~ \
-    && git clone https://github.com/meetecho/janus-gateway.git \
-    && cd janus-gateway \
-    && sh autogen.sh \
-    && ./configure --prefix=/opt/janus --disable-rabbitmq --disable-mqtt --enable-docs \
-    && make CFLAGS='-std=c99' \
-    && make install \
-    && make configs
+# Install build dependencies of libsrtp
+RUN \
+  apt-get update && \
+  apt-get install -y \
+	  libssl-dev
 
-RUN cp -rp ~/janus-gateway/certs /opt/janus/share/janus
+# Build libsrtp from sources as one shipped with ubuntu does not support AES-GCM profiles
+# This needs to use /usr or /usr/local as a prefix.
+# See https://github.com/meetecho/janus-gateway/issues/2019
+# See https://github.com/meetecho/janus-gateway/issues/2024
+RUN \
+  cd /build && \
+  git clone --branch v2.3.0 https://github.com/cisco/libsrtp.git && \
+  cd libsrtp && \
+  ./configure --prefix=/usr/local --enable-openssl && \
+  make -j$(nproc) shared_library && \
+  make install
 
-COPY conf/*.cfg /opt/janus/etc/janus/
+# Install build dependencies of janus-gateway
+RUN \
+  apt-get update && \
+  apt-get install -y \
+    libwebsockets-dev \
+    librabbitmq-dev \
+	  libssl-dev \
+    libglib2.0-dev \
+    libmicrohttpd-dev \
+    libjansson-dev \
+    libsofia-sip-ua-dev \
+	  libopus-dev \
+    libogg-dev \
+    libavcodec-dev \
+    libavformat-dev \
+    libavutil-dev \
+    libcurl4-openssl-dev \
+    liblua5.3-dev \
+	  libconfig-dev \
+    gengetopt
 
-RUN apt-get install nginx -y
-COPY nginx/nginx.conf /etc/nginx/nginx.conf
+# Build janus-gateway from sources
+RUN \
+  cd /build && \
+  git clone --branch v1.2.3 https://github.com/meetecho/janus-gateway.git
+RUN cd /build/janus-gateway && \
+  sh autogen.sh && \
+  ./configure --prefix=/usr/local \
+    --disable-all-transports \
+    --enable-post-processing \
+    --enable-websockets \
+    --enable-rabbitmq \
+    --disable-all-handlers \
+    --enable-rabbitmq-event-handler \
+    --enable-gelf-event-handler \
+    --enable-rest \
+    --disable-all-loggers
+RUN cd /build/janus-gateway && \
+  make -j$(nproc) && \
+  make install && \
+  make configs
 
-EXPOSE 80 7088 8088 8188 8089
-EXPOSE 10000-10200/udp
+# Install dependencies of dockerize
+RUN \
+  apt-get update && \
+  apt-get install -y \
+    wget
 
-CMD service nginx restart && /opt/janus/bin/janus --nat-1-1=${DOCKER_IP}
+# Install dockerize
+ENV DOCKERIZE_VERSION v0.7.0
+RUN wget https://github.com/jwilder/dockerize/releases/download/$DOCKERIZE_VERSION/dockerize-$OS-$ARCH-$DOCKERIZE_VERSION.tar.gz \
+    && tar -C /usr/local/bin -xzvf dockerize-$OS-$ARCH-$DOCKERIZE_VERSION.tar.gz \
+    && rm dockerize-$OS-$ARCH-$DOCKERIZE_VERSION.tar.gz
+
+FROM ubuntu:focal
+ARG app_uid=999
+ARG ulimit_nofile_soft=524288
+ARG ulimit_nofile_hard=1048576
+
+# Install runtime dependencies of janus-gateway
+RUN \
+  apt-get update && \
+  apt-get install -y \
+    libwebsockets15 \
+    librabbitmq4 \
+	  libssl1.1 \
+    libglib2.0-0 \
+    libmicrohttpd12 \
+    libjansson4 \
+    libsofia-sip-ua-glib3 \
+	  libopus0 \
+    libogg0 \
+    libavcodec58 \
+    libavformat58 \
+    libavutil56 \
+    libcurl4 \
+    liblua5.3-0 \
+	  libconfig9 && \
+ rm -rf /var/lib/apt/lists/*
+
+# Copy all things that were built
+COPY --from=build /usr/local /usr/local
+
+# Set ulimits
+RUN \
+  echo ":${app_uid}	soft	nofile	${ulimit_nofile_soft}" > /etc/security/limits.conf && \
+  echo ":${app_uid}	hard	nofile	${ulimit_nofile_hard}" >> /etc/security/limits.conf
+
+# Do not run as root unless necessary
+RUN groupadd -g ${app_uid} app && useradd -r -u ${app_uid} -g app app
+
+# Copy entrypoint and config templates
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ADD templates /templates
+
+# Start the gateway
+ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib/x86_64-linux-gnu:/usr/local/lib/aarch64-linux-gnu
+CMD /entrypoint.sh
