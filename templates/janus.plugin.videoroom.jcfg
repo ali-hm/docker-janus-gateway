@@ -58,7 +58,7 @@ general: {
 {{ if .Env.DEMO_ROOM_ENABLED }}
 room-1234: {
 	description = "Demo Room"
-	secret = {{ default .Env.DEMO_ROOM_SECRET "adminpwd" }}
+	secret = "{{ default .Env.DEMO_ROOM_SECRET "adminpwd" }}"
 	publishers = 6
 	bitrate = 128000	# This is a low cap, increase if you want to use simulcast or SVC
 	fir_freq = 10
